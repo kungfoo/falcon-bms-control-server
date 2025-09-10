@@ -3,7 +3,7 @@ use crate::{
     state::{State, StreamKey},
     texture_stream::{self, StreamOptions},
 };
-use enet::{Address, Enet, Host, Packet, PeerID};
+use enet::{Address, Enet, Host, Packet, Peer, PeerID};
 use log::{debug, error, info, trace};
 
 use std::{
@@ -119,10 +119,12 @@ impl EnetServer {
             let service_result = locked_host.service(Duration::from_millis(0));
             match service_result {
                 Ok(service_result) => {
-                    if let Some(event) = service_result {
+                    if let Some(mut event) = service_result {
                         match event.kind() {
                             enet::EventKind::Connect => {
                                 info!("Peer connected: {:?}", event.peer_id());
+                                let peer: &mut Peer<PeerData> = event.peer_mut();
+                                peer.set_ping_interval(Duration::from_millis(200));
                             }
                             enet::EventKind::Disconnect { data: _ } => {
                                 info!("Peer disconnected: {:?}", event.peer_id());
