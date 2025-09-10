@@ -1,23 +1,27 @@
 use log::{debug, error};
-use std::time::Duration;
-use tokio::sync::mpsc::Sender;
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc::Sender,
+    },
+    thread,
+    time::Duration,
+};
 
-use rusty_enet::Packet;
-use tokio_util::sync::CancellationToken;
-
-use crate::{packet_shuttle::PacketShuttleMessage, state::StreamKey};
+use crate::{enet_server::PacketData, state::StreamKey};
 
 pub struct TextureStream {
-    cancellation_token: CancellationToken,
+    cancellation_token: Arc<AtomicBool>,
     stream_key: StreamKey,
-    tx: Sender<PacketShuttleMessage>,
+    tx: Sender<PacketData>,
 }
 
 impl TextureStream {
     pub fn new(
-        cancellation_token: CancellationToken,
+        cancellation_token: Arc<AtomicBool>,
         stream_key: StreamKey,
-        tx: Sender<PacketShuttleMessage>,
+        tx: Sender<PacketData>,
     ) -> Self {
         Self {
             cancellation_token,
@@ -26,28 +30,23 @@ impl TextureStream {
         }
     }
 
-    pub async fn run(&self) {
+    pub fn run(&self) {
         loop {
-            if self.cancellation_token.is_cancelled() {
+            if self.cancellation_token.load(Ordering::Relaxed) {
                 debug!("Cancelled streaming {:?}", self.stream_key);
                 break;
             }
 
-            tokio::time::sleep(Duration::from_millis(33)).await;
+            thread::sleep(Duration::from_millis(33));
             let message = format!("Hello: {:?}", self.stream_key);
-            let packet = Packet::unreliable_unsequenced(message.as_bytes());
 
-            let result = self
-                .tx
-                .send(PacketShuttleMessage {
-                    peer_id: self.stream_key.peer_id,
-                    channel: 0,
-                    packet,
-                })
-                .await;
-            match result {
+            match self.tx.send(PacketData {
+                peer_id: self.stream_key.peer_id.clone(),
+                data: message.into_bytes(),
+                channel: 0,
+            }) {
                 Ok(_) => {}
-                Err(e) => error!("Failed to send shuttle message: {}", e),
+                Err(e) => error!("Failed to send packet_data: {}", e),
             }
         }
     }

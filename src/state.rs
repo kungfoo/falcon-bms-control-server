@@ -1,12 +1,12 @@
 use std::ops::Deref;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use std::sync::Mutex;
 
 use std::collections::HashMap;
 
-use rusty_enet::PeerID;
-use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct State {
@@ -14,13 +14,13 @@ pub struct State {
 }
 
 pub struct InnerState {
-    pub streams_running: Arc<Mutex<HashMap<StreamKey, CancellationToken>>>,
-    pub cancellation_token: CancellationToken,
+    pub streams_running: Arc<Mutex<HashMap<StreamKey, Arc<AtomicBool>>>>,
+    pub cancellation_token: Arc<AtomicBool>,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct StreamKey {
-    pub peer_id: PeerID,
+    pub peer_id: String,
     pub identifier: String,
 }
 
@@ -31,17 +31,19 @@ impl State {
         }
     }
 
-    pub fn cancel_all_streams(&self, id: PeerID) {
-        let streams = self.streams_running.lock().unwrap();
-        let keys_to_cancel = streams.keys().filter(|key| key.peer_id == id);
-        for key in keys_to_cancel {
-            streams.get(key).unwrap().cancel();
+    pub fn cancel_all_streams(&self, id: Option<String>) {
+        if let Some(id) = id {
+            let streams = self.streams_running.lock().unwrap();
+            let keys_to_cancel = streams.keys().filter(|key| key.peer_id == id);
+            for key in keys_to_cancel {
+                streams.get(key).unwrap().store(true, Ordering::Relaxed);
+            }
         }
     }
 }
 
 impl InnerState {
-    pub fn new(cancellation_token: CancellationToken) -> Self {
+    pub fn new(cancellation_token: Arc<AtomicBool>) -> Self {
         Self {
             streams_running: Arc::new(Mutex::new(HashMap::new())),
             cancellation_token,
