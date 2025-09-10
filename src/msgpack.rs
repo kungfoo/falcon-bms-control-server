@@ -10,12 +10,12 @@ pub enum Message {
     Ack {},
     #[serde(rename = "icp-pressed")]
     IcpButtonPressed {
-        icp: String,
+        icp: Option<String>,
         button: String,
     },
     #[serde(rename = "icp-released")]
     IcpButtonReleased {
-        icp: String,
+        icp: Option<String>,
         button: String,
     },
     #[serde(rename = "osb-pressed")]

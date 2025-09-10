@@ -159,7 +159,7 @@ impl EnetServer {
                 }
             }
 
-            let _ = thread::sleep(Duration::from_millis(10));
+            let _ = thread::sleep(Duration::from_millis(2));
         }
 
         info!("Shutting down enet server");
@@ -173,8 +173,12 @@ impl EnetServer {
         message: Message,
     ) {
         match message {
-            Message::IcpButtonPressed { icp, button } => debug!("{}:{}", icp, button),
-            Message::IcpButtonReleased { icp, button } => debug!("{}:{}", icp, button),
+            Message::IcpButtonPressed { icp, button } => {
+                debug!("{}:{}", icp.unwrap_or_default(), button)
+            }
+            Message::IcpButtonReleased { icp, button } => {
+                debug!("{}:{}", icp.unwrap_or_default(), button)
+            }
             Message::OsbButtonPressed { mfd, osb } => debug!("{}:{}", mfd, osb),
             Message::OsbButtonReleased { mfd, osb } => debug!("{}:{}", mfd, osb),
             Message::StreamedTextureRequest {
