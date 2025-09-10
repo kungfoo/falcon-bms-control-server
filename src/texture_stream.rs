@@ -69,13 +69,13 @@ impl TextureStream {
                 let bytes = turbojpeg::compress(
                     image.as_deref(),
                     self.stream_options.quality.into(),
-                    turbojpeg::Subsamp::None,
+                    turbojpeg::Subsamp::Sub2x2,
                 );
 
                 let bytes = bytes.expect("Failed to encode jpeg");
 
                 let packet_data = PacketData {
-                    peer_id: self.stream_key.peer_id.clone(),
+                    peer_id: self.stream_key.peer_id,
                     data: bytes.to_vec(),
                     channel: texture_id as u8,
                 };

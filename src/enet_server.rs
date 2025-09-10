@@ -3,9 +3,8 @@ use crate::{
     state::{State, StreamKey},
     texture_stream::{self, StreamOptions},
 };
-use enet::{Address, Enet, Host, Packet};
+use enet::{Address, Enet, Host, Packet, PeerID};
 use log::{debug, error, info, trace};
-use uuid::Uuid;
 
 use std::{
     net::Ipv4Addr,
@@ -32,15 +31,13 @@ pub struct WrappedHost {
 
 #[derive(Clone, Debug)]
 pub struct PacketData {
-    pub peer_id: String,
+    pub peer_id: PeerID,
     pub data: Vec<u8>,
     pub channel: u8,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
-pub struct PeerData {
-    pub id: String,
-}
+pub struct PeerData {}
 
 impl WrappedHost {
     pub fn new(host: Host<PeerData>, rx: Receiver<PacketData>) -> Self {
@@ -51,32 +48,31 @@ impl WrappedHost {
     }
 
     /// enet is fighting really hard against being used from more than one thread, and that's okay
-    /// so here is code to shuttle packets before calling host.service again.
+    /// so here is code to shuttle packets before calling host.service() again.
     pub fn queue_packets_to_send(&self) {
-        let to_send = self.rx.recv_timeout(Duration::from_millis(1));
-        if let Ok(to_send) = to_send {
-            let mut host = self
-                .host
-                .lock()
-                .expect("Could not lock host to send packet");
-            let peer = host.peers().find(|peer| {
-                let p = peer.data().map(|data| data.id.clone());
-                if let Some(p) = p {
-                    return p == to_send.peer_id;
-                }
-                false
-            });
-            if let Some(mut peer) = peer {
-                let result = peer.send_packet(
-                    Packet::new(&to_send.data, enet::PacketMode::UnreliableSequenced)
-                        .expect("Failed to create enet packet"),
-                    to_send.channel,
-                );
+        loop {
+            let to_send = self.rx.recv_timeout(Duration::from_millis(1));
+            if let Ok(to_send) = to_send {
+                let mut host = self
+                    .host
+                    .lock()
+                    .expect("Could not lock host to send packet");
+                if let Some(peer) = host.peer_mut(to_send.peer_id) {
+                    let packet = Packet::new(
+                        to_send.data,
+                        enet::PacketMode::UnreliableUnsequencedUnreliablyFragmented,
+                    )
+                    .expect("Failed to create enet packet");
 
-                match result {
-                    Ok(_) => trace!("Queued packet!"),
-                    Err(e) => error!("Failed to send packet because of: {}", e),
+                    let result = peer.send_packet(packet, to_send.channel);
+
+                    match result {
+                        Ok(_) => trace!("Queued packet!"),
+                        Err(e) => error!("Failed to send packet because of: {}", e),
+                    }
                 }
+            } else {
+                break;
             }
         }
     }
@@ -119,41 +115,28 @@ impl EnetServer {
             wrapped_host.queue_packets_to_send();
 
             let mut locked_host = wrapped_host.host.lock().unwrap();
-            let service_result = locked_host.service(100);
+
+            let service_result = locked_host.service(Duration::from_millis(0));
             match service_result {
                 Ok(service_result) => {
-                    if let Some(mut event) = service_result {
-                        match event {
-                            enet::Event::Connect(ref mut peer) => {
-                                peer.set_data(Some(PeerData {
-                                    id: Uuid::new_v4().to_string(),
-                                }));
-                                let id = peer.data().map(|d| d.id.clone()).unwrap();
-                                info!("Peer connected: {}", id);
+                    if let Some(event) = service_result {
+                        match event.kind() {
+                            enet::EventKind::Connect => {
+                                info!("Peer connected: {:?}", event.peer_id());
                             }
-                            enet::Event::Disconnect(ref peer, _) => {
-                                let id = peer.data().map(|d| d.id.clone());
-                                info!("Peer disconnected: {}", id.clone().unwrap());
-                                self.state.cancel_all_streams(id);
+                            enet::EventKind::Disconnect { data: _ } => {
+                                info!("Peer disconnected: {:?}", event.peer_id());
+                                self.state.cancel_all_streams(event.peer_id());
                             }
-                            enet::Event::Receive {
-                                ref sender,
-                                channel_id,
-                                ref packet,
-                            } => {
+                            enet::EventKind::Receive { channel_id, packet } => {
                                 let payload = packet.data();
                                 let message: Result<Message, rmp_serde::decode::Error> =
                                     rmp_serde::from_slice(payload);
-                                let peer_id = sender
-                                    .data()
-                                    .expect("Sender did not have data attached")
-                                    .id
-                                    .clone();
                                 match message {
                                     Ok(message) => self.handle_message(
                                         tx.clone(),
-                                        peer_id,
-                                        channel_id,
+                                        event.peer_id(),
+                                        *channel_id,
                                         message,
                                     ),
                                     Err(e) => {
@@ -167,7 +150,7 @@ impl EnetServer {
                 Err(e) => error!("Failed to service host: {}", e),
             }
 
-            thread::sleep(Duration::from_millis(2));
+            thread::sleep(Duration::from_millis(1));
         }
 
         info!("Shutting down enet server");
@@ -176,19 +159,19 @@ impl EnetServer {
     fn handle_message(
         &self,
         tx: Sender<PacketData>,
-        peer_id: String,
+        peer_id: PeerID,
         _channel_id: u8,
         message: Message,
     ) {
         match message {
             Message::IcpButtonPressed { icp, button } => {
-                debug!("{}:{}:{}", peer_id, icp.unwrap_or_default(), button)
+                debug!("{:?}:{}:{}", peer_id, icp.unwrap_or_default(), button)
             }
             Message::IcpButtonReleased { icp, button } => {
-                debug!("{}:{}:{}", peer_id, icp.unwrap_or_default(), button)
+                debug!("{:?}:{}:{}", peer_id, icp.unwrap_or_default(), button)
             }
-            Message::OsbButtonPressed { mfd, osb } => debug!("{}:{}:{}", peer_id, mfd, osb),
-            Message::OsbButtonReleased { mfd, osb } => debug!("{}:{}:{}", peer_id, mfd, osb),
+            Message::OsbButtonPressed { mfd, osb } => debug!("{:?}:{}:{}", peer_id, mfd, osb),
+            Message::OsbButtonReleased { mfd, osb } => debug!("{:?}:{}:{}", peer_id, mfd, osb),
             Message::StreamedTextureRequest {
                 identifier,
                 command,
