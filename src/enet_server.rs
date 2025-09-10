@@ -1,4 +1,4 @@
-use log::{debug, info, trace};
+use log::{debug, error, info, trace};
 use rmp_serde::decode::Error;
 use rusty_enet::{Event, Peer};
 use tokio_util::sync::CancellationToken;
@@ -9,18 +9,21 @@ use rusty_enet::HostSettings;
 
 use std::time::Duration;
 
-use crate::msgpack::Message;
+use crate::{
+    State, StreamKey,
+    msgpack::{Command, Message},
+};
 
 pub struct EnetServer {
     addr: String,
-    cancellation_token: CancellationToken,
+    state: State,
 }
 
 impl EnetServer {
-    pub fn new(addr: &str, cancellation_token: CancellationToken) -> Self {
+    pub fn new(addr: &str, state: State) -> Self {
         Self {
             addr: addr.to_string(),
-            cancellation_token,
+            state,
         }
     }
 
@@ -30,7 +33,7 @@ impl EnetServer {
             .expect("Failed to setup enet host.");
 
         loop {
-            if self.cancellation_token.is_cancelled() {
+            if self.state.cancellation_token.is_cancelled() {
                 break;
             }
 
@@ -58,9 +61,7 @@ impl EnetServer {
 
                         let message: Result<Message, Error> = rmp_serde::from_slice(packet.data());
                         match message {
-                            Ok(message) => {
-                                debug!("msgpack message: {:?}", message)
-                            }
+                            Ok(message) => self.handle_message(peer, message).await,
                             Err(e) => debug!("failed to parse msgpack message due to: {}", e),
                         }
                     }
@@ -68,6 +69,46 @@ impl EnetServer {
             }
 
             tokio::time::sleep(Duration::from_millis(16)).await;
+        }
+    }
+
+    async fn handle_message(&self, peer: &Peer<UdpSocket>, message: Message) {
+        match message {
+            Message::IcpButtonPressed { .. } => {}
+            Message::IcpButtonReleased { .. } => {}
+            Message::OsbButtonPressed { .. } => {}
+            Message::OsbButtonReleased { .. } => {}
+            Message::StreamedTextureRequest {
+                identifier,
+                command,
+                ..
+            } => match command {
+                Command::Start => {
+                    let token = CancellationToken::new();
+                    let key = StreamKey {
+                        peer: describe_peer(peer),
+                        identifier,
+                    };
+
+                    let mut streams = self.state.streams_running.lock().unwrap();
+                    streams.insert(key, token);
+                    debug!("streams running: {:?}", streams.len());
+                }
+                Command::Stop => {
+                    let key = StreamKey {
+                        peer: describe_peer(peer),
+                        identifier,
+                    };
+                    let mut streams = self.state.streams_running.lock().unwrap();
+                    streams.get(&key).map(|token| token.cancel());
+                    streams.remove(&key);
+
+                    debug!("streams running: {:?}", streams.len());
+                }
+            },
+            msg => {
+                error!("Received unexpected message via enet: {:?}", msg)
+            }
         }
     }
 }

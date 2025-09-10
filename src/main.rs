@@ -1,3 +1,9 @@
+use std::collections::HashMap;
+use std::ops::Deref;
+use std::ops::DerefMut;
+use std::sync::Arc;
+use std::sync::Mutex;
+
 use env_logger::Env;
 use figment::Figment;
 use figment::providers::Format;
@@ -7,6 +13,7 @@ use log::debug;
 use log::info;
 use serde::Deserialize;
 use serde::Serialize;
+use tokio_util::sync::CancellationToken;
 
 mod enet_server;
 mod msgpack;
@@ -30,6 +37,47 @@ impl Default for Config {
     }
 }
 
+#[derive(Clone)]
+struct State {
+    inner: Arc<InnerState>,
+}
+
+struct InnerState {
+    streams_running: Arc<Mutex<HashMap<StreamKey, CancellationToken>>>,
+    cancellation_token: CancellationToken,
+}
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+struct StreamKey {
+    peer: String,
+    identifier: String,
+}
+
+impl State {
+    fn new(inner: InnerState) -> Self {
+        Self {
+            inner: Arc::new(inner),
+        }
+    }
+}
+
+impl InnerState {
+    fn new(cancellation_token: CancellationToken) -> Self {
+        Self {
+            streams_running: Arc::new(Mutex::new(HashMap::new())),
+            cancellation_token,
+        }
+    }
+}
+
+impl Deref for State {
+    type Target = InnerState;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let config: Config = Figment::new()
@@ -48,8 +96,10 @@ async fn main() {
 
     let cancellation_token = tokio_util::sync::CancellationToken::new();
 
+    let state = State::new(InnerState::new(cancellation_token.clone()));
+
     let addr = format!("{}:{}", config.listen_address, config.listen_port);
-    let enet_server = enet_server::EnetServer::new(&addr, cancellation_token.clone());
+    let enet_server = enet_server::EnetServer::new(&addr, state.clone());
     tokio::spawn(async move {
         enet_server.run().await;
     });
