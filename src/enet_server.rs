@@ -53,7 +53,6 @@ impl WrappedHost {
     /// enet is fighting really hard against being used from more than one thread, and that's okay
     /// so here is code to shuttle packets before calling host.service again.
     pub fn queue_packets_to_send(&self) {
-        // TODO: Maybe queue multiples?
         let to_send = self.rx.recv_timeout(Duration::from_millis(1));
         if let Ok(to_send) = to_send {
             let mut host = self

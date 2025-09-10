@@ -20,6 +20,7 @@ mod config;
 mod enet_server;
 mod msgpack;
 mod state;
+mod texture_reader;
 mod texture_stream;
 
 fn main() {
