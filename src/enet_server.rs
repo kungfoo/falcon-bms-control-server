@@ -1,3 +1,4 @@
+use crate::state::{State, StreamKey};
 use log::{debug, error, info, trace};
 use rmp_serde::decode::Error;
 use rusty_enet::{Event, Peer};
@@ -9,10 +10,7 @@ use rusty_enet::HostSettings;
 
 use std::time::Duration;
 
-use crate::{
-    State, StreamKey,
-    msgpack::{Command, Message},
-};
+use crate::msgpack::{Command, Message};
 
 pub struct EnetServer {
     addr: String,
@@ -100,7 +98,9 @@ impl EnetServer {
                         identifier,
                     };
                     let mut streams = self.state.streams_running.lock().unwrap();
-                    streams.get(&key).map(|token| token.cancel());
+                    if let Some(token) = streams.get(&key) {
+                        token.cancel()
+                    }
                     streams.remove(&key);
 
                     debug!("streams running: {:?}", streams.len());

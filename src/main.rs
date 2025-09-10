@@ -1,8 +1,6 @@
-use std::collections::HashMap;
-use std::ops::Deref;
-use std::ops::DerefMut;
-use std::sync::Arc;
-use std::sync::Mutex;
+use crate::state::InnerState;
+use crate::state::State;
+use config::Config;
 
 use env_logger::Env;
 use figment::Figment;
@@ -11,72 +9,12 @@ use figment::providers::Serialized;
 use figment::providers::Toml;
 use log::debug;
 use log::info;
-use serde::Deserialize;
 use serde::Serialize;
-use tokio_util::sync::CancellationToken;
 
+mod config;
 mod enet_server;
 mod msgpack;
-
-#[derive(Debug, Serialize, Deserialize)]
-struct Config {
-    log_level: String,
-    listen_address: String,
-    listen_port: u16,
-    broadcast_port: u16,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            log_level: "info".to_string(),
-            listen_address: "0.0.0.0".to_string(),
-            listen_port: 9022,
-            broadcast_port: 9020,
-        }
-    }
-}
-
-#[derive(Clone)]
-struct State {
-    inner: Arc<InnerState>,
-}
-
-struct InnerState {
-    streams_running: Arc<Mutex<HashMap<StreamKey, CancellationToken>>>,
-    cancellation_token: CancellationToken,
-}
-
-#[derive(Debug, PartialEq, Eq, Hash)]
-struct StreamKey {
-    peer: String,
-    identifier: String,
-}
-
-impl State {
-    fn new(inner: InnerState) -> Self {
-        Self {
-            inner: Arc::new(inner),
-        }
-    }
-}
-
-impl InnerState {
-    fn new(cancellation_token: CancellationToken) -> Self {
-        Self {
-            streams_running: Arc::new(Mutex::new(HashMap::new())),
-            cancellation_token,
-        }
-    }
-}
-
-impl Deref for State {
-    type Target = InnerState;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
+mod state;
 
 #[tokio::main]
 async fn main() {
