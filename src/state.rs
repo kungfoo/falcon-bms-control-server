@@ -6,7 +6,6 @@ use std::sync::Mutex;
 
 use std::collections::HashMap;
 
-
 #[derive(Clone)]
 pub struct State {
     inner: Arc<InnerState>,

@@ -32,8 +32,8 @@ pub enum Message {
     StreamedTextureRequest {
         identifier: String,
         command: Command,
-        refresh_rate: Option<i64>,
-        quality: Option<i64>,
+        refresh_rate: Option<u16>,
+        quality: Option<u16>,
     },
     Unknown,
 }

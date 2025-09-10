@@ -28,5 +28,5 @@ enet = "0.3.0"
 uuid = { version = "1.18.1", features = ["v4"] }
 
 [profile.release]
-lto = true
+lto = "thin"
 strip = true

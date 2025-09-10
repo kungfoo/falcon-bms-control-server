@@ -14,18 +14,36 @@ use crate::{enet_server::PacketData, state::StreamKey};
 pub struct TextureStream {
     cancellation_token: Arc<AtomicBool>,
     stream_key: StreamKey,
+    stream_options: StreamOptions,
     tx: Sender<PacketData>,
+}
+
+#[derive(Debug)]
+pub struct StreamOptions {
+    pub refresh_rate: u16,
+    pub quality: u16,
+}
+
+impl StreamOptions {
+    pub fn new(refresh_rate: Option<u16>, quality: Option<u16>) -> Self {
+        Self {
+            refresh_rate: refresh_rate.unwrap_or(30),
+            quality: quality.unwrap_or(65),
+        }
+    }
 }
 
 impl TextureStream {
     pub fn new(
         cancellation_token: Arc<AtomicBool>,
         stream_key: StreamKey,
+        stream_options: StreamOptions,
         tx: Sender<PacketData>,
     ) -> Self {
         Self {
             cancellation_token,
             stream_key,
+            stream_options,
             tx,
         }
     }
@@ -38,15 +56,16 @@ impl TextureStream {
             }
 
             thread::sleep(Duration::from_millis(16));
-            let message = format!("Hello: {:?}", self.stream_key);
+            let message = format!("Hello: {:?}:{:?}", self.stream_key, self.stream_options);
 
-            match self.tx.send(PacketData {
+            let packet_data = PacketData {
                 peer_id: self.stream_key.peer_id.clone(),
                 data: message.into_bytes(),
                 channel: 0,
-            }) {
-                Ok(_) => {}
-                Err(e) => error!("Failed to send packet_data: {}", e),
+            };
+
+            if let Err(e) = self.tx.send(packet_data) {
+                error!("Failed to send packet_data: {}", e)
             }
         }
     }
