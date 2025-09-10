@@ -1,4 +1,7 @@
-use crate::state::{State, StreamKey};
+use crate::{
+    state::{State, StreamKey},
+    texture_stream,
+};
 use log::{debug, error, info, trace};
 use rmp_serde::decode::Error;
 use rusty_enet::{Event, Peer};
@@ -72,10 +75,10 @@ impl EnetServer {
 
     async fn handle_message(&self, peer: &Peer<UdpSocket>, message: Message) {
         match message {
-            Message::IcpButtonPressed { .. } => {}
-            Message::IcpButtonReleased { .. } => {}
-            Message::OsbButtonPressed { .. } => {}
-            Message::OsbButtonReleased { .. } => {}
+            Message::IcpButtonPressed { icp, button } => debug!("{}:{}", icp, button),
+            Message::IcpButtonReleased { icp, button } => debug!("{}:{}", icp, button),
+            Message::OsbButtonPressed { mfd, osb } => debug!("{}:{}", mfd, osb),
+            Message::OsbButtonReleased { mfd, osb } => debug!("{}:{}", mfd, osb),
             Message::StreamedTextureRequest {
                 identifier,
                 command,
@@ -89,8 +92,13 @@ impl EnetServer {
                     };
 
                     let mut streams = self.state.streams_running.lock().unwrap();
-                    streams.insert(key, token);
+                    streams.insert(key.clone(), token.clone());
                     debug!("streams running: {:?}", streams.len());
+
+                    let texture_stream = texture_stream::TextureStream::new(token, key);
+                    tokio::spawn(async move {
+                        texture_stream.run().await;
+                    });
                 }
                 Command::Stop => {
                     let key = StreamKey {

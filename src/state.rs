@@ -17,7 +17,7 @@ pub struct InnerState {
     pub cancellation_token: CancellationToken,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct StreamKey {
     pub peer: String,
     pub identifier: String,

@@ -15,6 +15,7 @@ mod config;
 mod enet_server;
 mod msgpack;
 mod state;
+mod texture_stream;
 
 #[tokio::main]
 async fn main() {
