@@ -27,3 +27,7 @@ serde = {version = "1", features = ["derive"]}
 rusty_enet = "0.4.0"
 tokio-util = "0.7.16"
 rmp-serde = "1.3.0"
+
+[profile.release]
+lto = "thin"
+strip = true

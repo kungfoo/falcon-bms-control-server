@@ -14,6 +14,7 @@ use serde::Serialize;
 mod config;
 mod enet_server;
 mod msgpack;
+mod packet_shuttle;
 mod state;
 mod texture_stream;
 
