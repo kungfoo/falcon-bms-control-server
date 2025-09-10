@@ -37,7 +37,7 @@ impl TextureStream {
                 break;
             }
 
-            thread::sleep(Duration::from_millis(33));
+            thread::sleep(Duration::from_millis(16));
             let message = format!("Hello: {:?}", self.stream_key);
 
             match self.tx.send(PacketData {

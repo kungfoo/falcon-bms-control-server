@@ -67,7 +67,7 @@ impl WrappedHost {
                 );
 
                 match result {
-                    Ok(_) => trace!("Sent packet"),
+                    Ok(_) => trace!("Queued packet!"),
                     Err(e) => error!("Failed to send packet because of: {}", e),
                 }
             }
@@ -191,7 +191,7 @@ impl EnetServer {
 
                     let mut streams = self.state.streams_running.lock().unwrap();
                     streams.insert(key.clone(), token.clone());
-                    debug!("streams running: {:?}", streams.len());
+                    debug!("starting: {:?}", key);
 
                     let texture_stream = texture_stream::TextureStream::new(token, key, tx);
 
@@ -210,7 +210,7 @@ impl EnetServer {
                     }
                     streams.remove(&key);
 
-                    debug!("streams running: {:?}", streams.len());
+                    debug!("stopping: {:?}", key);
                 }
             },
             msg => {
