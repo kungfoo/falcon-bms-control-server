@@ -189,7 +189,7 @@ impl EnetServer {
                     streams.insert(key.clone(), token.clone());
                     let stream_options = StreamOptions::new(refresh_rate, quality);
                     debug!("starting: {:?}:{:?}", key, stream_options);
-                    let texture_stream =
+                    let mut texture_stream =
                         texture_stream::TextureStream::new(token, key, stream_options, tx);
 
                     let _ = thread::spawn(move || {

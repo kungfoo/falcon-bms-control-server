@@ -1,5 +1,7 @@
 use crate::texture_reader;
+use core::hash::Hasher;
 use log::{debug, error};
+use seahash::SeaHasher;
 use std::{
     sync::{
         Arc,
@@ -17,6 +19,7 @@ pub struct TextureStream {
     stream_key: StreamKey,
     stream_options: StreamOptions,
     tx: Sender<PacketData>,
+    last_hash: Option<u64>,
 }
 
 #[derive(Debug)]
@@ -46,10 +49,11 @@ impl TextureStream {
             stream_key,
             stream_options,
             tx,
+            last_hash: None,
         }
     }
 
-    pub fn run(&self) {
+    pub fn run(&mut self) {
         loop {
             if self.cancellation_token.load(Ordering::Relaxed) {
                 debug!("Cancelled streaming {:?}", self.stream_key);
@@ -64,8 +68,17 @@ impl TextureStream {
             let data = texture_reader::rtt_texture_read(texture_id.clone());
 
             if let Ok(image) = data {
-                // make it a jpeg as requested
+                let mut sea_hasher = SeaHasher::new();
+                sea_hasher.write(image.pixels.as_slice());
+                let hash = sea_hasher.finish();
 
+                if let Some(last_hash) = self.last_hash
+                    && last_hash == hash
+                {
+                    // the last sent frame is the same as this one.
+                    continue;
+                }
+                // make it a jpeg as requested
                 let bytes = turbojpeg::compress(
                     image.as_deref(),
                     self.stream_options.quality.into(),
@@ -82,6 +95,8 @@ impl TextureStream {
 
                 if let Err(e) = self.tx.send(packet_data) {
                     error!("Failed to send packet_data: {}", e)
+                } else {
+                    self.last_hash.replace(hash);
                 }
             } else {
                 // TODO: for now this is okay
