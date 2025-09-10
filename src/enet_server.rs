@@ -9,6 +9,7 @@ use uuid::Uuid;
 
 use std::{
     net::Ipv4Addr,
+    rc::Rc,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -25,7 +26,7 @@ pub struct EnetServer {
 }
 
 pub struct WrappedHost {
-    host: Arc<Mutex<Host<PeerData>>>,
+    host: Rc<Mutex<Host<PeerData>>>,
     rx: Receiver<PacketData>,
 }
 
@@ -39,7 +40,7 @@ pub struct PacketData {
 impl WrappedHost {
     pub fn new(host: Host<PeerData>, rx: Receiver<PacketData>) -> Self {
         WrappedHost {
-            host: Arc::new(Mutex::new(host)),
+            host: Rc::new(Mutex::new(host)),
             rx,
         }
     }
@@ -159,7 +160,7 @@ impl EnetServer {
                 }
             }
 
-            let _ = thread::sleep(Duration::from_millis(2));
+            thread::sleep(Duration::from_millis(2));
         }
 
         info!("Shutting down enet server");

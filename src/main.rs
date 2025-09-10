@@ -1,4 +1,3 @@
-use std::error::Error;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::thread;

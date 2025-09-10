@@ -6,7 +6,6 @@ use std::sync::Mutex;
 
 use std::collections::HashMap;
 
-use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct State {
