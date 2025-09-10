@@ -37,6 +37,11 @@ pub struct PacketData {
     pub channel: u8,
 }
 
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub struct PeerData {
+    pub id: String,
+}
+
 impl WrappedHost {
     pub fn new(host: Host<PeerData>, rx: Receiver<PacketData>) -> Self {
         WrappedHost {
@@ -46,8 +51,8 @@ impl WrappedHost {
     }
 
     pub fn queue_packets_to_send(&self) {
-        // TODO: Maybe queue multiples
-        let to_send = self.rx.recv_timeout(Duration::from_millis(5));
+        // TODO: Maybe queue multiples?
+        let to_send = self.rx.recv_timeout(Duration::from_millis(1));
         if let Ok(to_send) = to_send {
             let mut host = self
                 .host
@@ -74,14 +79,6 @@ impl WrappedHost {
             }
         }
     }
-}
-
-unsafe impl Send for WrappedHost {}
-unsafe impl Send for PeerData {}
-
-#[derive(Debug, PartialEq, Eq, Hash)]
-pub struct PeerData {
-    pub id: String,
 }
 
 impl EnetServer {
