@@ -1,7 +1,5 @@
 use crate::texture_reader;
-use core::hash::Hasher;
 use log::{debug, error};
-use seahash::SeaHasher;
 use std::{
     sync::{
         Arc,
@@ -68,9 +66,7 @@ impl TextureStream {
             let data = texture_reader::rtt_texture_read(texture_id.clone());
 
             if let Ok(image) = data {
-                let mut sea_hasher = SeaHasher::new();
-                sea_hasher.write(image.pixels.as_slice());
-                let hash = sea_hasher.finish();
+                let hash = seahash::hash(image.pixels.as_slice());
 
                 if let Some(last_hash) = self.last_hash
                     && last_hash == hash
