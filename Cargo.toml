@@ -8,23 +8,18 @@ build = "build.rs"
 vergen-git2 = { version = "1.0.0", features = ["build", "cargo", "rustc", "si"] }
 anyhow = "*"
 
-# [lib]
-# name = "falcon_key_file"
-# path = "src/lib/falcon-key-file/src/lib.rs"
-
 [dependencies]
-# bms-sm = { version = "*", path = "src/lib/bms-rs" }
 log = "0.4"
 env_logger = "0.11"
-# winapi = "*"
-# user32-sys = "*"
+winapi = "*"
+user32-sys = "*"
 enigo = "0.6"
 seahash = "4.1.0"
 levenshtein = "1.0.5"
 figment = { version = "0.10", features = ["toml"]}
 serde = {version = "1", features = ["derive"]}
 rmp-serde = "1.3.0"
-enet = { path = "/home/kungfoo/repositories/enet-rs", version = "0.5.0" }
+enet = { version = "0.4.0", git = "https://github.com/kungfoo/enet-rs.git" }
 uuid = { version = "1.18.1", features = ["v4"] }
 turbojpeg = { version = "1.3.3", features = ["image"]}
 bms-sm = { git = "https://github.com/kungfoo/bms-rs.git", version = "0.1.2" }

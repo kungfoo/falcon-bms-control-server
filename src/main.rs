@@ -1,4 +1,4 @@
-use crate::keyfile_watcher::{KeyfileMessage, KeyfileWatcher};
+use crate::keyfile_watcher::KeyfileWatcher;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::thread;
@@ -6,6 +6,7 @@ use std::thread;
 use crate::enet_server::EnetServer;
 use crate::state::InnerState;
 use crate::state::State;
+use callbacks::CallbackSender;
 use config::Config;
 
 use env_logger::Env;
@@ -15,11 +16,14 @@ use figment::providers::Serialized;
 use figment::providers::Toml;
 use log::debug;
 use log::info;
-use serde::Serialize;
+use messages::Message;
 
+mod callbacks;
 mod config;
 mod enet_server;
+mod keyboard_emulator;
 mod keyfile_watcher;
+mod messages;
 mod msgpack;
 mod state;
 mod texture_reader;
@@ -43,20 +47,21 @@ fn main() {
     info!("falcon-bms-control server: {}", version);
     debug!("Config is: {:?}", &config);
 
-    let (keyfile_tx, keyfile_rx) = std::sync::mpsc::channel::<KeyfileMessage>();
+    // comms channels for threads
+    let (tx, rx) = std::sync::mpsc::channel::<Message>();
 
     let state = State::new(InnerState::new(cancel_handle));
 
+    // all the stuff we're running concurrently
     let enet_server = EnetServer::new(config.listen_address, config.listen_port, state.clone());
+    let mut key_filewatcher = KeyfileWatcher::new(tx, state.clone());
+    let mut callback_sender = CallbackSender::new(rx, state.clone());
 
-    let key_filewatcher = KeyfileWatcher::new(keyfile_tx, state.clone());
+    // run all of them
+    let h1 = thread::spawn(move || enet_server.run());
+    let h2 = thread::spawn(move || key_filewatcher.run());
 
-    let handle = thread::spawn(move || {
-        enet_server.run();
-    });
-
-    let keyfile_handle = thread::spawn(move || key_filewatcher.run());
-
-    handle.join().unwrap();
+    let _ = h1.join();
+    let _ = h2.join();
     info!("Shutting down...");
 }

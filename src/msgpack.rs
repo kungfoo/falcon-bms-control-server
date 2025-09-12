@@ -1,5 +1,5 @@
-use crate::Serialize;
 use serde::Deserialize;
+use serde::Serialize;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
