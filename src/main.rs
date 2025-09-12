@@ -1,3 +1,4 @@
+use crate::keyfile_watcher::{KeyfileMessage, KeyfileWatcher};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::thread;
@@ -18,6 +19,7 @@ use serde::Serialize;
 
 mod config;
 mod enet_server;
+mod keyfile_watcher;
 mod msgpack;
 mod state;
 mod texture_reader;
@@ -41,13 +43,19 @@ fn main() {
     info!("falcon-bms-control server: {}", version);
     debug!("Config is: {:?}", &config);
 
+    let (keyfile_tx, keyfile_rx) = std::sync::mpsc::channel::<KeyfileMessage>();
+
     let state = State::new(InnerState::new(cancel_handle));
 
     let enet_server = EnetServer::new(config.listen_address, config.listen_port, state.clone());
 
+    let key_filewatcher = KeyfileWatcher::new(keyfile_tx, state.clone());
+
     let handle = thread::spawn(move || {
         enet_server.run();
     });
+
+    let keyfile_handle = thread::spawn(move || key_filewatcher.run());
 
     handle.join().unwrap();
     info!("Shutting down...");
