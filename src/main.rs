@@ -53,15 +53,22 @@ fn main() {
     let state = State::new(InnerState::new(cancel_handle));
 
     // all the stuff we're running concurrently
-    let enet_server = EnetServer::new(config.listen_address, config.listen_port, state.clone());
-    let mut key_filewatcher = KeyfileWatcher::new(tx, state.clone());
+    let enet_server = EnetServer::new(
+        tx.clone(),
+        config.listen_address,
+        config.listen_port,
+        state.clone(),
+    );
+    let mut key_filewatcher = KeyfileWatcher::new(tx.clone(), state.clone());
     let mut callback_sender = CallbackSender::new(rx, state.clone());
 
     // run all of them
     let h1 = thread::spawn(move || enet_server.run());
     let h2 = thread::spawn(move || key_filewatcher.run());
+    let h3 = thread::spawn(move || callback_sender.run());
 
     let _ = h1.join();
     let _ = h2.join();
+    let _ = h3.join();
     info!("Shutting down...");
 }

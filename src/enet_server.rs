@@ -1,5 +1,6 @@
 use crate::{
-    msgpack::{Command, Message},
+    messages::Message,
+    msgpack::{Command, ProtocolMessage},
     state::{State, StreamKey},
     texture_stream::{self, StreamOptions},
 };
@@ -22,6 +23,7 @@ pub struct EnetServer {
     address: String,
     port: u16,
     state: State,
+    callback_tx: Sender<Message>,
 }
 
 pub struct WrappedHost {
@@ -79,11 +81,12 @@ impl WrappedHost {
 }
 
 impl EnetServer {
-    pub fn new(address: String, port: u16, state: State) -> Self {
+    pub fn new(tx: Sender<Message>, address: String, port: u16, state: State) -> Self {
         Self {
             address,
             port,
             state,
+            callback_tx: tx,
         }
     }
 
@@ -132,7 +135,7 @@ impl EnetServer {
                             }
                             enet::EventKind::Receive { channel_id, packet } => {
                                 let payload = packet.data();
-                                let message: Result<Message, rmp_serde::decode::Error> =
+                                let message: Result<ProtocolMessage, rmp_serde::decode::Error> =
                                     rmp_serde::from_slice(payload);
                                 match message {
                                     Ok(message) => self.handle_message(
@@ -163,18 +166,10 @@ impl EnetServer {
         tx: Sender<PacketData>,
         peer_id: PeerID,
         _channel_id: u8,
-        message: Message,
+        message: ProtocolMessage,
     ) {
         match message {
-            Message::IcpButtonPressed { icp, button } => {
-                debug!("{:?}:{}:{}", peer_id, icp.unwrap_or_default(), button)
-            }
-            Message::IcpButtonReleased { icp, button } => {
-                debug!("{:?}:{}:{}", peer_id, icp.unwrap_or_default(), button)
-            }
-            Message::OsbButtonPressed { mfd, osb } => debug!("{:?}:{}:{}", peer_id, mfd, osb),
-            Message::OsbButtonReleased { mfd, osb } => debug!("{:?}:{}:{}", peer_id, mfd, osb),
-            Message::StreamedTextureRequest {
+            ProtocolMessage::StreamedTextureRequest {
                 identifier,
                 command,
                 refresh_rate,
@@ -213,7 +208,13 @@ impl EnetServer {
                 }
             },
             msg => {
-                error!("Received unexpected message via enet: {:?}", msg)
+                debug!("Sending message to callback tx: {:?}", msg);
+                let result = self
+                    .callback_tx
+                    .send(Message::EnetReceived { message: msg });
+                if let Err(e) = result {
+                    error!("Failed to send callback message: {}", e);
+                }
             }
         }
     }

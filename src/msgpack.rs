@@ -3,7 +3,7 @@ use serde::Serialize;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
-pub enum Message {
+pub enum ProtocolMessage {
     #[serde(rename = "hello")]
     Hello {},
     #[serde(rename = "ack")]

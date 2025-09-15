@@ -1,6 +1,5 @@
 use std::{sync::mpsc::Sender, thread, time::Duration};
 
-use falcon_key_file::FalconKeyfile;
 use log::{debug, error, trace};
 
 use bms_sm::{StringData, StringId};
@@ -41,10 +40,10 @@ impl KeyfileWatcher {
             if let Ok(string_data) = StringData::read() {
                 let key_file_path = &string_data[&StringId::KeyFile];
 
-                if key_file_path.len() > 0 {
+                if !key_file_path.is_empty() {
                     trace!("About to read key file: {:?}", key_file_path);
                     let path = Path::new(key_file_path);
-                    let mut file = File::open(&path).unwrap();
+                    let mut file = File::open(path).unwrap();
                     let file_name = String::from(path.file_name().unwrap().to_str().unwrap());
 
                     let mut buffer = Vec::new();
@@ -77,7 +76,7 @@ impl KeyfileWatcher {
 
     fn read_key_file_and_send_result(file_name: String, mut file: &File, tx: &Sender<Message>) {
         file.rewind().expect("Could not seek to beginning of file.");
-        match falcon_key_file::parse(file_name, &file) {
+        match falcon_key_file::parse(file_name, file) {
             Ok(key_file) => {
                 let message = Message::KeyfileRead { key_file };
                 tx.send(message).unwrap();
