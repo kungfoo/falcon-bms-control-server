@@ -9,6 +9,8 @@ use std::{
     thread,
     time::Duration,
 };
+use turbojpeg::Image;
+use turbojpeg::PixelFormat;
 
 use crate::{enet_server::PacketData, state::StreamKey, texture_reader::TextureId};
 
@@ -66,7 +68,7 @@ impl TextureStream {
             let data = texture_reader::rtt_texture_read(texture_id.clone());
 
             if let Ok(image) = data {
-                let hash = seahash::hash(image.pixels.as_slice());
+                let hash = seahash::hash(image.as_raw());
 
                 if let Some(last_hash) = self.last_hash
                     && last_hash == hash
@@ -74,9 +76,18 @@ impl TextureStream {
                     // the last sent frame is the same as this one.
                     continue;
                 }
+
+                let tj_image = Image {
+                    pixels: image.as_raw().as_slice(),
+                    width: image.width() as usize,
+                    pitch: image.width() as usize * 3, // 3 bytes per pixel (RGB)
+                    height: image.height() as usize,
+                    format: PixelFormat::RGB,
+                };
+
                 // make it a jpeg as requested
                 let bytes = turbojpeg::compress(
-                    image.as_deref(),
+                    tj_image,
                     self.stream_options.quality.into(),
                     turbojpeg::Subsamp::Sub2x2,
                 );

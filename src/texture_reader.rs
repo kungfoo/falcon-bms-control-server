@@ -1,5 +1,6 @@
-use std::fs::read;
-use turbojpeg::Image;
+use bms_sm::{FlightData2, RttTextures};
+use image::RgbImage;
+use log::error;
 
 /// an identifier and the channel to send on.
 #[derive(Debug, Clone)]
@@ -24,21 +25,39 @@ impl From<&str> for TextureId {
     }
 }
 
-pub fn rtt_texture_read(texture_id: TextureId) -> Result<Image<Vec<u8>>, std::io::Error> {
-    match texture_id {
-        TextureId::LeftMfd => read_jpeg("images/left-mfd.jpeg"),
-        TextureId::RightMfd => read_jpeg("images/right-mfd.jpeg"),
-        TextureId::Ded => read_jpeg("images/ded.jpeg"),
-        _ => {
-            // error!("Unhandled texture id: {:?}", texture_id);
-            Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, ""))
+pub fn rtt_texture_read(texture_id: TextureId) -> Result<RgbImage, std::io::Error> {
+    let tx_result = RttTextures::read();
+    let fd_result = FlightData2::new();
+
+    if let (Ok(textures), Ok(flight_data)) = (tx_result, fd_result) {
+        let flight_data2 = flight_data.read();
+
+        match texture_id {
+            TextureId::LeftMfd => {
+                let c = flight_data2.get_rtt_area(bms_sm::RttArea::MfdLeft);
+                Ok(textures.get_image(c.left, c.top, c.right, c.bottom))
+            }
+            TextureId::RightMfd => {
+                let c = flight_data2.get_rtt_area(bms_sm::RttArea::MfdRight);
+                Ok(textures.get_image(c.left, c.top, c.right, c.bottom))
+            }
+            TextureId::Ded => {
+                let c = flight_data2.get_rtt_area(bms_sm::RttArea::Ded);
+                Ok(textures.get_image(c.left, c.top, c.right, c.bottom))
+            }
+            TextureId::Rwr => {
+                let c = flight_data2.get_rtt_area(bms_sm::RttArea::Rwr);
+                Ok(textures.get_image(c.left, c.top, c.right, c.bottom))
+            }
+            _ => {
+                error!("Unhandled texture id: {:?}", texture_id);
+                Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, ""))
+            }
         }
+    } else {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::NotConnected,
+            "BMS is not running or exporting.",
+        ))
     }
-}
-
-fn read_jpeg(path: &str) -> Result<Image<Vec<u8>>, std::io::Error> {
-    let data = read(path).unwrap();
-
-    let image = turbojpeg::decompress(&data, turbojpeg::PixelFormat::RGB).unwrap();
-    Ok(image)
 }
