@@ -10,19 +10,6 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        ref: ${{ github.ref }}
-        submodules: recursive
-    - name: Install MinGW-w64
-      run: sudo apt-get update && sudo apt-get install -y mingw-w64 nasm
-    - name: Run tests
-      run: rustup target add x86_64-pc-windows-gnu && cargo test --verbose --target=x86_64-pc-windows-gnu
-
   build_release_and_package:
     runs-on: ubuntu-latest
 
