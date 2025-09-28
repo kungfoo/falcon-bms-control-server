@@ -11,7 +11,7 @@ env:
 
 jobs:
   test:
-    runs-on: windows-latest
+    runs-on: linux
 
     steps:
     - uses: actions/checkout@v4
@@ -19,7 +19,7 @@ jobs:
         ref: ${{ github.ref }}
         submodules: recursive
     - name: Run tests
-      run: cargo test --verbose
+      run: rustup target add x86_64-pc-windows-gnu && cargo test --verbose --target=x86_64-pc-windows-gnu
 
   build_release_and_package:
     runs-on: windows-latest
@@ -31,33 +31,21 @@ jobs:
         ref: ${{ github.ref }}
         submodules: recursive
     - name: Build for x64
-      run: cargo build --release --target=x86_64-pc-windows-msvc
-    - name: Build for i686
-      run: rustup target add i686-pc-windows-msvc && cargo build --release --target=i686-pc-windows-msvc
+      run: rustup target add x86_64-pc-windows-gnu && cargo build --release --target=x86_64-pc-windows-gnu
     - name: Package binaries
-      shell: pwsh
+      shell: bash
       run: |
-        New-Item -Name ".\target\package\win64" -Type Directory
-        New-Item -Name ".\target\package\win32" -Type Directory
+        mkdir -p target/package/win64
 
-        Copy-Item "config-release.toml" -Destination ".\target\package\win64\config.toml"
-        Copy-Item "config-release.toml" -Destination ".\target\package\win32\config.toml"
+        cp config.toml target/package/win64/config.toml
+        cp target/x86_64-pc-windows-gnu/release/falcon-bms-control-server.exe target/package/win64/
 
-        Copy-Item ".\target\x86_64-pc-windows-msvc\release\falcon-bms-control-server.exe" -Destination ".\target\package\win64\"
-        Copy-Item ".\target\i686-pc-windows-msvc\release\falcon-bms-control-server.exe" -Destination ".\target\package\win32\"
+        ls target/package/win64
 
-        tree target\package /F
-
-        Compress-Archive -Path ".\target\package\win64\*" -DestinationPath ".\target\package\falcon-bms-control-server-win64.zip"
-        Compress-Archive -Path ".\target\package\win32\*" -DestinationPath ".\target\package\falcon-bms-control-server-win32.zip"
+        zip -9  target/package/falcon-bms-control-server-win64.zip target/package/win64/*
 
     - name: Upload win64 binary
       uses: actions/upload-artifact@v4
       with:
         name: falcon-bms-control-server-win64.zip
         path: ./target/package/falcon-bms-control-server-win64.zip
-    - name: Upload win32 binary
-      uses: actions/upload-artifact@v4
-      with:
-        name: falcon-bms-control-server-win32.zip
-        path: ./target/package/falcon-bms-control-server-win32.zip
