@@ -11,7 +11,7 @@ env:
 
 jobs:
   test:
-    runs-on: linux
+    runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4
@@ -22,7 +22,7 @@ jobs:
       run: rustup target add x86_64-pc-windows-gnu && cargo test --verbose --target=x86_64-pc-windows-gnu
 
   build_release_and_package:
-    runs-on: linux
+    runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4
