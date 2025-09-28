@@ -15,3 +15,6 @@ This will only build for windows (probably `x86_64-pc-windows-gnu` and certainly
 
 That should be all that is needed for a succefull incantation of `cargo build`.
 
+It will also build on linux with `cargo build --target x86_64-pc-windows-gnu`.
+
+

@@ -101,7 +101,7 @@ impl CallbackSender {
                 // intentionally left blank
             }
             ProtocolMessage::OsbButtonReleased { mfd: _, osb: _ } => {
-                //intentionally left blank
+                // intentionally left blank
             }
             any => debug!(
                 "Received a msgpack message that was not supposed to invoke a callback: {:?}",
@@ -128,7 +128,7 @@ impl CallbackSender {
                     user32::SetForegroundWindow(window_handle);
                     user32::ShowWindow(window_handle, 9);
                 }
-                thread::sleep(Duration::from_millis(30));
+                thread::sleep(Duration::from_millis(15));
                 keyboard_emulator::invoke(callback);
             } else {
                 error!("Received unknown callback '{}'", callback);
