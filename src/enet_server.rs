@@ -104,7 +104,10 @@ impl EnetServer {
             )
             .expect("Failed to create enet host");
 
-        debug!("Host address: {:?}", host.address());
+        info!(
+            "Listening for connections on: {}:{}",
+            self.address, self.port
+        );
 
         let (tx, rx) = mpsc::channel();
 

@@ -6,6 +6,7 @@ use std::thread;
 use crate::enet_server::EnetServer;
 use crate::state::InnerState;
 use crate::state::State;
+use crate::udp_broadcast_listener::UdpBroadcastListener;
 use callbacks::CallbackSender;
 use config::Config;
 
@@ -28,6 +29,7 @@ mod msgpack;
 mod state;
 mod texture_reader;
 mod texture_stream;
+mod udp_broadcast_listener;
 
 fn main() {
     let config: Config = Figment::new()
@@ -53,6 +55,12 @@ fn main() {
     let state = State::new(InnerState::new(cancel_handle));
 
     // all the stuff we're running concurrently
+    let mut udp_broadcast_listener = UdpBroadcastListener::new(
+        config.listen_address.clone(),
+        config.broadcast_port,
+        state.clone(),
+    );
+
     let enet_server = EnetServer::new(
         tx.clone(),
         config.listen_address,
@@ -66,9 +74,11 @@ fn main() {
     let h1 = thread::spawn(move || enet_server.run());
     let h2 = thread::spawn(move || key_filewatcher.run());
     let h3 = thread::spawn(move || callback_sender.run());
+    let h4 = thread::spawn(move || udp_broadcast_listener.run());
 
     let _ = h1.join();
     let _ = h2.join();
     let _ = h3.join();
+    let _ = h4.join();
     info!("Shutting down...");
 }
