@@ -1,6 +1,9 @@
+use crate::enet_server::PacketData;
 use crate::keyfile_watcher::KeyfileWatcher;
+use crate::texture_stream::TextureStream;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::mpsc;
 use std::thread;
 
 use crate::enet_server::EnetServer;
@@ -50,7 +53,10 @@ fn main() {
     debug!("Config is: {:?}", &config);
 
     // comms channels for threads
-    let (tx, rx) = std::sync::mpsc::channel::<Message>();
+    let (tx, rx) = mpsc::channel::<Message>();
+
+    // comms channel for enet packets
+    let (enet_tx, enet_rx) = mpsc::channel::<PacketData>();
 
     let state = State::new(InnerState::new(cancel_handle));
 
@@ -69,16 +75,19 @@ fn main() {
     );
     let mut key_filewatcher = KeyfileWatcher::new(tx.clone(), state.clone());
     let mut callback_sender = CallbackSender::new(rx, state.clone());
+    let mut texture_stream = TextureStream::new(state.clone(), enet_tx.clone());
 
     // run all of them
-    let h1 = thread::spawn(move || enet_server.run());
+    let h1 = thread::spawn(move || enet_server.run(enet_rx));
     let h2 = thread::spawn(move || key_filewatcher.run());
     let h3 = thread::spawn(move || callback_sender.run());
     let h4 = thread::spawn(move || udp_broadcast_listener.run());
+    let h5 = thread::spawn(move || texture_stream.run());
 
     let _ = h1.join();
     let _ = h2.join();
     let _ = h3.join();
     let _ = h4.join();
+    let _ = h5.join();
     info!("Shutting down...");
 }

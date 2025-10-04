@@ -1,114 +1,161 @@
-use crate::texture_reader;
+use crate::{
+    state::{State, StreamOptions},
+    texture_reader,
+};
+use enet::PeerID;
 use log::{debug, error};
+use lru_mem::LruCache;
 use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-        mpsc::Sender,
-    },
+    collections::HashMap,
+    sync::{atomic::Ordering, mpsc::Sender},
     thread,
     time::Duration,
 };
-use turbojpeg::Image;
-use turbojpeg::PixelFormat;
+use turbojpeg::{Image, PixelFormat};
 
-use crate::{enet_server::PacketData, state::StreamKey, texture_reader::TextureId};
+use crate::{enet_server::PacketData, texture_reader::TextureId};
 
 pub struct TextureStream {
-    cancellation_token: Arc<AtomicBool>,
-    stream_key: StreamKey,
-    stream_options: StreamOptions,
+    state: State,
     tx: Sender<PacketData>,
-    last_hash: Option<u64>,
+    last_encoded: LruCache<LruCacheKey, Vec<u8>>,
+    last_sent: LastSent,
 }
 
-#[derive(Debug)]
-pub struct StreamOptions {
-    pub refresh_rate: u16,
-    pub quality: u16,
+/// caches last encoded payloads per options and hash,
+/// so we can save encoding x times for x peers wanting the same data.
+#[derive(Debug, Hash, PartialEq, Eq)]
+pub struct LruCacheKey {
+    pub stream_options: StreamOptions,
+    pub payload_hash: u64,
 }
 
-impl StreamOptions {
-    pub fn new(refresh_rate: Option<u16>, quality: Option<u16>) -> Self {
+/// stores the last hash sent for a texture identifier per peer.
+struct LastSent {
+    last_sent: HashMap<LastSentKey, u64>,
+}
+
+impl LastSent {
+    pub fn new() -> Self {
         Self {
-            refresh_rate: refresh_rate.unwrap_or(30),
-            quality: quality.unwrap_or(65),
+            last_sent: HashMap::new(),
         }
+    }
+
+    fn for_peer(&self, peer: PeerID, identifier: String) -> u64 {
+        self.last_sent
+            .get(&LastSentKey { peer, identifier })
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    fn remember(&mut self, peer: PeerID, identifier: String, data_hash: u64) {
+        self.last_sent
+            .insert(LastSentKey { peer, identifier }, data_hash);
     }
 }
 
+#[derive(Debug, Hash, PartialEq, Eq)]
+struct LastSentKey {
+    peer: PeerID,
+    identifier: String,
+}
+
+// let's use 2mb of LRU cache for now.
+const MAX_SIZE: usize = 2048 * 1024;
+
 impl TextureStream {
-    pub fn new(
-        cancellation_token: Arc<AtomicBool>,
-        stream_key: StreamKey,
-        stream_options: StreamOptions,
-        tx: Sender<PacketData>,
-    ) -> Self {
+    pub fn new(state: State, tx: Sender<PacketData>) -> Self {
         Self {
-            cancellation_token,
-            stream_key,
-            stream_options,
+            state,
             tx,
-            last_hash: None,
+            last_encoded: LruCache::new(MAX_SIZE),
+            last_sent: LastSent::new(),
         }
     }
 
     pub fn run(&mut self) {
         loop {
-            if self.cancellation_token.load(Ordering::Relaxed) {
-                debug!("Cancelled streaming {:?}", self.stream_key);
+            if self.state.cancellation_token.load(Ordering::Relaxed) {
+                debug!("Stopping all streams.");
                 break;
             }
 
-            thread::sleep(Duration::from_millis(
-                1000 / self.stream_options.refresh_rate as u64,
-            ));
+            // for now, let's just aim for 60fps
+            thread::sleep(Duration::from_millis(16));
 
-            let texture_id: TextureId = self.stream_key.identifier.as_str().into();
-            let data = texture_reader::rtt_texture_read(texture_id.clone());
+            let to_send = self.state.streams_to_send();
 
-            if let Ok(image) = data {
-                let hash = seahash::hash(image.as_raw());
+            for key in to_send {
+                let texture_id: TextureId = key.identifier.as_str().into();
+                let data = texture_reader::rtt_texture_read(texture_id.clone());
+                let channel = texture_id as u8;
 
-                if let Some(last_hash) = self.last_hash
-                    && last_hash == hash
-                {
-                    // the last sent frame is the same as this one.
-                    continue;
-                }
+                if let Ok(image) = data {
+                    let hash = seahash::hash(image.as_raw());
 
-                let tj_image = Image {
-                    pixels: image.as_raw().as_slice(),
-                    width: image.width() as usize,
-                    pitch: image.width() as usize * 3, // 3 bytes per pixel (RGB)
-                    height: image.height() as usize,
-                    format: PixelFormat::RGB,
-                };
+                    let lru_key = LruCacheKey {
+                        stream_options: key.stream_options,
+                        payload_hash: hash,
+                    };
 
-                // make it a jpeg as requested
-                let bytes = turbojpeg::compress(
-                    tj_image,
-                    self.stream_options.quality.into(),
-                    turbojpeg::Subsamp::Sub2x2,
-                );
+                    let last_encoded = self.last_encoded.get(&lru_key).cloned();
 
-                let bytes = bytes.expect("Failed to encode jpeg");
+                    if let Some(encoded) = last_encoded {
+                        if self.last_sent.for_peer(key.peer_id, key.identifier.clone()) == hash {
+                            // no need to send again.
+                            continue;
+                        }
 
-                let packet_data = PacketData {
-                    peer_id: self.stream_key.peer_id,
-                    data: bytes.to_vec(),
-                    channel: texture_id as u8,
-                };
+                        self.send(key.peer_id, key.identifier.clone(), encoded, channel, hash);
+                    } else {
+                        let tj_image = Image {
+                            pixels: image.as_raw().as_slice(),
+                            width: image.width() as usize,
+                            pitch: image.width() as usize * 3, // 3 bytes per pixel (RGB)
+                            height: image.height() as usize,
+                            format: PixelFormat::RGB,
+                        };
 
-                if let Err(e) = self.tx.send(packet_data) {
-                    error!("Failed to send packet_data: {}", e)
+                        // make it a jpeg as requested
+                        let bytes = turbojpeg::compress(
+                            tj_image,
+                            key.stream_options.quality.into(),
+                            turbojpeg::Subsamp::Sub2x2,
+                        );
+
+                        let bytes = bytes.expect("Failed to encode jpeg");
+                        // TODO: store in LRU cache
+
+                        self.send(key.peer_id, key.identifier, bytes.to_vec(), channel, hash);
+                    }
                 } else {
-                    self.last_hash.replace(hash);
+                    // TODO: for now this is okay
+                    // error!("Failed to read texture data for: {:?}", texture_id)
                 }
-            } else {
-                // TODO: for now this is okay
-                // error!("Failed to read texture data for: {:?}", texture_id)
             }
+        }
+    }
+
+    fn send(
+        &mut self,
+        peer_id: PeerID,
+        identifier: String,
+        bytes: Vec<u8>,
+        channel: u8,
+        data_hash: u64,
+    ) {
+        let packet_data = PacketData {
+            peer_id,
+            data: bytes,
+            channel,
+        };
+
+        if let Err(e) = self.tx.send(packet_data) {
+            error!("Failed to send packet_data: {}", e)
+        } else {
+            // remember that we sent this.
+            self.last_sent.remember(peer_id, identifier, data_hash);
         }
     }
 }

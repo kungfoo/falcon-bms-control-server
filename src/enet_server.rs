@@ -1,8 +1,7 @@
 use crate::{
     messages::Message,
     msgpack::{Command, ProtocolMessage},
-    state::{State, StreamKey},
-    texture_stream::{self, StreamOptions},
+    state::{State, StreamKey, StreamOptions},
 };
 use enet::{Address, Enet, Host, Packet, Peer, PeerID};
 use log::{debug, error, info, trace};
@@ -11,9 +10,9 @@ use std::{
     net::Ipv4Addr,
     rc::Rc,
     sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
-        mpsc::{self, Receiver, Sender},
+        Mutex,
+        atomic::Ordering,
+        mpsc::{Receiver, Sender},
     },
     thread,
     time::Duration,
@@ -90,7 +89,7 @@ impl EnetServer {
         }
     }
 
-    pub fn run(&self) {
+    pub fn run(&self, enet_rx: Receiver<PacketData>) {
         let ipv4 = self.address.parse::<Ipv4Addr>().unwrap();
         let address = Address::new(ipv4, self.port);
         let enet = Enet::new().expect("Failed to setup enet");
@@ -109,9 +108,7 @@ impl EnetServer {
             self.address, self.port
         );
 
-        let (tx, rx) = mpsc::channel();
-
-        let wrapped_host = WrappedHost::new(host, rx);
+        let wrapped_host = WrappedHost::new(host, enet_rx);
 
         loop {
             if self.state.cancellation_token.load(Ordering::Relaxed) {
@@ -141,12 +138,9 @@ impl EnetServer {
                                 let message: Result<ProtocolMessage, rmp_serde::decode::Error> =
                                     rmp_serde::from_slice(payload);
                                 match message {
-                                    Ok(message) => self.handle_message(
-                                        tx.clone(),
-                                        event.peer_id(),
-                                        *channel_id,
-                                        message,
-                                    ),
+                                    Ok(message) => {
+                                        self.handle_message(event.peer_id(), *channel_id, message)
+                                    }
                                     Err(e) => {
                                         error!("Failed to parse message due to: {}", e);
                                     }
@@ -164,13 +158,7 @@ impl EnetServer {
         info!("Shutting down enet server");
     }
 
-    fn handle_message(
-        &self,
-        tx: Sender<PacketData>,
-        peer_id: PeerID,
-        _channel_id: u8,
-        message: ProtocolMessage,
-    ) {
+    fn handle_message(&self, peer_id: PeerID, _channel_id: u8, message: ProtocolMessage) {
         match message {
             ProtocolMessage::StreamedTextureRequest {
                 identifier,
@@ -179,35 +167,23 @@ impl EnetServer {
                 quality,
             } => match command {
                 Command::Start => {
-                    let token = Arc::new(AtomicBool::new(false));
                     let key = StreamKey {
                         peer_id,
                         identifier,
+                        stream_options: StreamOptions::new(refresh_rate, quality),
                     };
 
-                    let mut streams = self.state.streams_running.lock().unwrap();
-                    streams.insert(key.clone(), token.clone());
-                    let stream_options = StreamOptions::new(refresh_rate, quality);
-                    debug!("starting: {:?}:{:?}", key, stream_options);
-                    let mut texture_stream =
-                        texture_stream::TextureStream::new(token, key, stream_options, tx);
-
-                    let _ = thread::spawn(move || {
-                        texture_stream.run();
-                    });
+                    debug!("starting: {:?}", key);
+                    self.state.start_stream(key);
                 }
                 Command::Stop => {
                     let key = StreamKey {
                         peer_id,
                         identifier,
+                        stream_options: StreamOptions::new(refresh_rate, quality),
                     };
-                    let mut streams = self.state.streams_running.lock().unwrap();
-                    if let Some(token) = streams.get(&key) {
-                        token.store(true, Ordering::Relaxed);
-                    }
-                    streams.remove(&key);
-
                     debug!("stopping: {:?}", key);
+                    self.state.stop_stream(key);
                 }
             },
             msg => {

@@ -29,6 +29,7 @@ windows = { version = "0.62.0", features = [
     "Win32_UI_Input_KeyboardAndMouse",
 ] }
 image = { version = "0.25.8", features = [] }
+lru-mem = "0.3.0"
 
 [profile.release]
 lto = true
