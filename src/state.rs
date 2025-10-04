@@ -1,10 +1,10 @@
 use std::ops::Deref;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 
 use std::sync::Mutex;
 
-use std::collections::HashMap;
+use std::collections::HashSet;
 
 use enet::PeerID;
 
@@ -14,7 +14,7 @@ pub struct State {
 }
 
 pub struct InnerState {
-    pub streams_running: Arc<Mutex<HashMap<StreamKey, Arc<AtomicBool>>>>,
+    pub streams_running: Arc<Mutex<HashSet<StreamKey>>>,
     pub cancellation_token: Arc<AtomicBool>,
 }
 
@@ -22,6 +22,22 @@ pub struct InnerState {
 pub struct StreamKey {
     pub peer_id: PeerID,
     pub identifier: String,
+    pub stream_options: StreamOptions,
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub struct StreamOptions {
+    pub refresh_rate: u16,
+    pub quality: u16,
+}
+
+impl StreamOptions {
+    pub fn new(refresh_rate: Option<u16>, quality: Option<u16>) -> Self {
+        Self {
+            refresh_rate: refresh_rate.unwrap_or(30),
+            quality: quality.unwrap_or(65),
+        }
+    }
 }
 
 impl State {
@@ -32,18 +48,38 @@ impl State {
     }
 
     pub fn cancel_all_streams(&self, id: PeerID) {
-        let streams = self.streams_running.lock().unwrap();
-        let keys_to_cancel = streams.keys().filter(|key| key.peer_id == id);
+        let mut streams = self.streams_running.lock().unwrap();
+        let keys_to_cancel: Vec<StreamKey> = streams
+            .iter()
+            .filter(|key| key.peer_id == id)
+            .cloned()
+            .collect();
+
         for key in keys_to_cancel {
-            streams.get(key).unwrap().store(true, Ordering::Relaxed);
+            streams.remove(&key);
         }
+    }
+
+    pub fn streams_to_send(&self) -> Vec<StreamKey> {
+        let streams = self.streams_running.lock().unwrap();
+        streams.iter().cloned().collect()
+    }
+
+    pub fn start_stream(&self, key: StreamKey) {
+        let mut streams = self.streams_running.lock().unwrap();
+        streams.insert(key);
+    }
+
+    pub fn stop_stream(&self, key: StreamKey) {
+        let mut streams = self.streams_running.lock().unwrap();
+        streams.remove(&key);
     }
 }
 
 impl InnerState {
     pub fn new(cancellation_token: Arc<AtomicBool>) -> Self {
         Self {
-            streams_running: Arc::new(Mutex::new(HashMap::new())),
+            streams_running: Arc::new(Mutex::new(HashSet::new())),
             cancellation_token,
         }
     }
