@@ -106,8 +106,8 @@ impl TextureStream {
                             self.last_hash.replace(hash);
                         }
                     }
-                    Err(e) => {
-                        error!("Failed to encode {:?} because of {}", self.stream_key, e);
+                    Err(_) => {
+                        // this is okay for now, we'll try again on the next frame.
                     }
                 }
             } else {
