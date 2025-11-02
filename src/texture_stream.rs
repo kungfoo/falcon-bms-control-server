@@ -92,18 +92,23 @@ impl TextureStream {
                     turbojpeg::Subsamp::Sub2x2,
                 );
 
-                let bytes = bytes.expect("Failed to encode jpeg");
+                match bytes {
+                    Ok(bytes) => {
+                        let packet_data = PacketData {
+                            peer_id: self.stream_key.peer_id,
+                            data: bytes.to_vec(),
+                            channel: texture_id as u8,
+                        };
 
-                let packet_data = PacketData {
-                    peer_id: self.stream_key.peer_id,
-                    data: bytes.to_vec(),
-                    channel: texture_id as u8,
-                };
-
-                if let Err(e) = self.tx.send(packet_data) {
-                    error!("Failed to send packet_data: {}", e)
-                } else {
-                    self.last_hash.replace(hash);
+                        if let Err(e) = self.tx.send(packet_data) {
+                            error!("Failed to send packet_data: {}", e)
+                        } else {
+                            self.last_hash.replace(hash);
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to encode {:?} because of {}", self.stream_key, e);
+                    }
                 }
             } else {
                 // TODO: for now this is okay

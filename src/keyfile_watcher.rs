@@ -43,28 +43,40 @@ impl KeyfileWatcher {
                 if !key_file_path.is_empty() {
                     trace!("About to read key file: {:?}", key_file_path);
                     let path = Path::new(key_file_path);
-                    let mut file = File::open(path).unwrap();
-                    let file_name = String::from(path.file_name().unwrap().to_str().unwrap());
+                    let file = File::open(path);
 
-                    let mut buffer = Vec::new();
-                    buffer.clear();
-                    let _ = file.read_to_end(&mut buffer);
+                    match file {
+                        Ok(mut file) => {
+                            let file_name =
+                                String::from(path.file_name().unwrap().to_str().unwrap());
 
-                    let hash = seahash::hash(&buffer);
-                    match self.last_hash {
-                        Some(old_hash) => {
-                            if hash != old_hash {
-                                debug!("Key file contents changed, re-reading it.");
-                                Self::read_key_file_and_send_result(file_name, &file, &self.tx);
-                                self.last_hash = Some(hash);
-                            } else {
-                                trace!("Keyfile unchanged, hash: {}", hash);
+                            let mut buffer = Vec::new();
+                            buffer.clear();
+                            let _ = file.read_to_end(&mut buffer);
+
+                            let hash = seahash::hash(&buffer);
+                            match self.last_hash {
+                                Some(old_hash) => {
+                                    if hash != old_hash {
+                                        debug!("Key file contents changed, re-reading it.");
+                                        Self::read_key_file_and_send_result(
+                                            file_name, &file, &self.tx,
+                                        );
+                                        self.last_hash = Some(hash);
+                                    } else {
+                                        trace!("Keyfile unchanged, hash: {}", hash);
+                                    }
+                                }
+                                None => {
+                                    debug!("Reading key file for the first time.");
+                                    Self::read_key_file_and_send_result(file_name, &file, &self.tx);
+                                    self.last_hash = Some(hash);
+                                }
                             }
                         }
-                        None => {
-                            debug!("Reading key file for the first time.");
-                            Self::read_key_file_and_send_result(file_name, &file, &self.tx);
-                            self.last_hash = Some(hash);
+                        Err(e) => {
+                            error!("Failed to open key file at '{}' due to '{}'. This is a permissions issue. \n
+                                Please make sure falcon-bms-control-server can access the BMS install folder.", path.display(), e);
                         }
                     }
                 }
