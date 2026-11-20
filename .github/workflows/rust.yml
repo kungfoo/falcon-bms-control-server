@@ -11,7 +11,7 @@ env:
 
 jobs:
   build_release_and_package:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
     - uses: actions/checkout@v4
@@ -21,11 +21,15 @@ jobs:
         submodules: recursive
     - name: Install MinGW-w64 and LLVM 18
       run: |
-        sudo apt-get update
-        sudo apt-get install -y mingw-w64 nasm clang-18 libclang-18-dev
+        wget https://apt.llvm.org/llvm.sh
+        chmod +x llvm.sh
+        sudo ./llvm.sh 18
+        sudo apt-get install -y mingw-w64 nasm libclang-18-dev
     - name: Build for x64
       env:
         LIBCLANG_PATH: /usr/lib/llvm-18/lib
+        CLANG_PATH: /usr/bin/clang-18
+        BINDGEN_EXTRA_CLANG_ARGS: --target=x86_64-pc-windows-gnu
       run: rustup target add x86_64-pc-windows-gnu && cargo build --release --target=x86_64-pc-windows-gnu
     - name: Package binaries
       shell: bash
