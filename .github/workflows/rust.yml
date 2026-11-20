@@ -19,9 +19,13 @@ jobs:
         fetch-depth: 0
         ref: ${{ github.ref }}
         submodules: recursive
-    - name: Install MinGW-w64
-      run: sudo apt-get update && sudo apt-get install -y mingw-w64 nasm
+    - name: Install MinGW-w64 and LLVM 18
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y mingw-w64 nasm clang-18 libclang-18-dev
     - name: Build for x64
+      env:
+        LIBCLANG_PATH: /usr/lib/llvm-18/lib
       run: rustup target add x86_64-pc-windows-gnu && cargo build --release --target=x86_64-pc-windows-gnu
     - name: Package binaries
       shell: bash
