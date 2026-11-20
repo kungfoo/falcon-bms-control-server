@@ -1,5 +1,5 @@
 use crate::texture_reader;
-use log::{debug, error};
+use log::{debug, error, info, warn};
 use std::{
     sync::{
         Arc,
@@ -53,7 +53,13 @@ impl TextureStream {
         }
     }
 
+    pub fn stream_key(&self) -> &StreamKey {
+        &self.stream_key
+    }
+
     pub fn run(&mut self) {
+        let mut last_read_error: Option<String> = None;
+
         loop {
             if self.cancellation_token.load(Ordering::Relaxed) {
                 debug!("Cancelled streaming {:?}", self.stream_key);
@@ -61,58 +67,84 @@ impl TextureStream {
             }
 
             thread::sleep(Duration::from_millis(
-                1000 / self.stream_options.refresh_rate as u64,
+                1000 / self.stream_options.refresh_rate.max(1) as u64,
             ));
 
             let texture_id: TextureId = self.stream_key.identifier.as_str().into();
             let data = texture_reader::rtt_texture_read(texture_id.clone());
 
-            if let Ok(image) = data {
-                let hash = seahash::hash(image.as_raw());
+            match data {
+                Ok(image) => {
+                    if last_read_error.take().is_some() {
+                        info!(
+                            "Recovered shared memory texture read for {:?}",
+                            self.stream_key
+                        );
+                    }
 
-                if let Some(last_hash) = self.last_hash
-                    && last_hash == hash
-                {
-                    // the last sent frame is the same as this one.
-                    continue;
-                }
+                    let hash = seahash::hash(image.as_raw());
 
-                let tj_image = Image {
-                    pixels: image.as_raw().as_slice(),
-                    width: image.width() as usize,
-                    pitch: image.width() as usize * 3, // 3 bytes per pixel (RGB)
-                    height: image.height() as usize,
-                    format: PixelFormat::RGB,
-                };
+                    if let Some(last_hash) = self.last_hash
+                        && last_hash == hash
+                    {
+                        // the last sent frame is the same as this one.
+                        continue;
+                    }
 
-                // make it a jpeg as requested
-                let bytes = turbojpeg::compress(
-                    tj_image,
-                    self.stream_options.quality.into(),
-                    turbojpeg::Subsamp::Sub2x2,
-                );
+                    let tj_image = Image {
+                        pixels: image.as_raw().as_slice(),
+                        width: image.width() as usize,
+                        pitch: image.width() as usize * 3, // 3 bytes per pixel (RGB)
+                        height: image.height() as usize,
+                        format: PixelFormat::RGB,
+                    };
 
-                match bytes {
-                    Ok(bytes) => {
-                        let packet_data = PacketData {
-                            peer_id: self.stream_key.peer_id,
-                            data: bytes.to_vec(),
-                            channel: texture_id as u8,
-                        };
+                    // make it a jpeg as requested
+                    let bytes = turbojpeg::compress(
+                        tj_image,
+                        self.stream_options.quality.into(),
+                        turbojpeg::Subsamp::Sub2x2,
+                    );
 
-                        if let Err(e) = self.tx.send(packet_data) {
-                            error!("Failed to send packet_data: {}", e)
-                        } else {
-                            self.last_hash.replace(hash);
+                    match bytes {
+                        Ok(bytes) => {
+                            let packet_data = PacketData {
+                                peer_id: self.stream_key.peer_id,
+                                data: bytes.to_vec(),
+                                channel: texture_id as u8,
+                            };
+
+                            if let Err(e) = self.tx.send(packet_data) {
+                                error!(
+                                    "Failed to send packet_data for {:?}, stopping stream: {}",
+                                    self.stream_key, e
+                                );
+                                break;
+                            } else {
+                                self.last_hash.replace(hash);
+                            }
+                        }
+                        Err(e) => {
+                            warn!(
+                                "Failed to compress JPEG for {:?} ({}x{}): {}",
+                                self.stream_key,
+                                image.width(),
+                                image.height(),
+                                e
+                            );
                         }
                     }
-                    Err(_) => {
-                        // this is okay for now, we'll try again on the next frame.
+                }
+                Err(e) => {
+                    let msg = e.to_string();
+                    if last_read_error.as_deref() != Some(&msg) {
+                        warn!(
+                            "Failed to read texture data for {:?}: {}",
+                            self.stream_key, msg
+                        );
+                        last_read_error = Some(msg);
                     }
                 }
-            } else {
-                // TODO: for now this is okay
-                // error!("Failed to read texture data for: {:?}", texture_id)
             }
         }
     }

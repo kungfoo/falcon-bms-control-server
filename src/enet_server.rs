@@ -52,29 +52,24 @@ impl WrappedHost {
     /// enet is fighting really hard against being used from more than one thread, and that's okay
     /// so here is code to shuttle packets before calling host.service() again.
     pub fn queue_packets_to_send(&self) {
-        loop {
-            let to_send = self.rx.recv_timeout(Duration::from_millis(1));
-            if let Ok(to_send) = to_send {
-                let mut host = self
-                    .host
-                    .lock()
-                    .expect("Could not lock host to send packet");
-                if let Some(peer) = host.peer_mut(to_send.peer_id) {
-                    let packet = Packet::new(
-                        to_send.data,
-                        enet::PacketMode::UnreliableUnsequencedUnreliablyFragmented,
-                    )
-                    .expect("Failed to create enet packet");
+        while let Ok(to_send) = self.rx.try_recv() {
+            let mut host = self
+                .host
+                .lock()
+                .expect("Could not lock host to send packet");
+            if let Some(peer) = host.peer_mut(to_send.peer_id) {
+                let packet = Packet::new(
+                    to_send.data,
+                    enet::PacketMode::UnreliableUnsequencedUnreliablyFragmented,
+                )
+                .expect("Failed to create enet packet");
 
-                    let result = peer.send_packet(packet, to_send.channel);
+                let result = peer.send_packet(packet, to_send.channel);
 
-                    match result {
-                        Ok(_) => trace!("Queued packet!"),
-                        Err(e) => error!("Failed to send packet because of: {}", e),
-                    }
+                match result {
+                    Ok(_) => trace!("Queued packet!"),
+                    Err(e) => error!("Failed to send packet because of: {}", e),
                 }
-            } else {
-                break;
             }
         }
     }
@@ -193,7 +188,22 @@ impl EnetServer {
                         texture_stream::TextureStream::new(token, key, stream_options, tx);
 
                     let _ = thread::spawn(move || {
-                        texture_stream.run();
+                        let key_for_panic = texture_stream.stream_key().clone();
+                        if let Err(panic_info) =
+                            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                texture_stream.run();
+                            }))
+                        {
+                            let msg = panic_info
+                                .downcast_ref::<&str>()
+                                .copied()
+                                .or_else(|| panic_info.downcast_ref::<String>().map(|s| s.as_str()))
+                                .unwrap_or("unknown panic payload");
+                            error!(
+                                "TextureStream thread for {:?} panicked: {}",
+                                key_for_panic, msg
+                            );
+                        }
                     });
                 }
                 Command::Stop => {

@@ -4,7 +4,7 @@ The next version of the server component of the `falcon-bms-control` app.
 
 ## How to build this?
 
-This will only build for windows (probably `x86_64-pc-windows-gnu` and certainly `x86_64-pc-windows-msvc`, since it directly uses Win32 API and there is no point in building it for other platforms. After all BMS runs on windows (or wine) only. 
+This will only build for windows (probably `x86_64-pc-windows-gnu` and certainly `x86_64-pc-windows-msvc`, since it directly uses Win32 API and there is no point in building it for other platforms. After all BMS (currently) runs on windows (or wine) only. 
 
 - Install MSYS2 MINGW64
 - Install the required packages:
@@ -16,5 +16,3 @@ This will only build for windows (probably `x86_64-pc-windows-gnu` and certainly
 That should be all that is needed for a succefull incantation of `cargo build`.
 
 It will also build on linux with `cargo build --target x86_64-pc-windows-gnu`.
-
-
