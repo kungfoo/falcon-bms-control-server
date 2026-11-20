@@ -47,7 +47,7 @@ fn main() {
     let version = option_env!("VERGEN_GIT_DESCRIBE").unwrap_or("Could not determine version!");
 
     info!("falcon-bms-control server: {}", version);
-    debug!("Config is: {:?}", &config);
+    debug!("Config is: {:?}", config);
 
     // comms channels for threads
     let (tx, rx) = std::sync::mpsc::channel::<Message>();

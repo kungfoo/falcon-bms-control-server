@@ -36,6 +36,7 @@ pub struct PacketData {
     pub peer_id: PeerID,
     pub data: Vec<u8>,
     pub channel: u8,
+    pub reliable: bool,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -58,11 +59,12 @@ impl WrappedHost {
                 .lock()
                 .expect("Could not lock host to send packet");
             if let Some(peer) = host.peer_mut(to_send.peer_id) {
-                let packet = Packet::new(
-                    to_send.data,
-                    enet::PacketMode::UnreliableUnsequencedUnreliablyFragmented,
-                )
-                .expect("Failed to create enet packet");
+                let mode = if to_send.reliable {
+                    enet::PacketMode::ReliableSequenced
+                } else {
+                    enet::PacketMode::UnreliableUnsequencedUnreliablyFragmented
+                };
+                let packet = Packet::new(to_send.data, mode).expect("Failed to create enet packet");
 
                 let result = peer.send_packet(packet, to_send.channel);
 
@@ -181,7 +183,10 @@ impl EnetServer {
                     };
 
                     let mut streams = self.state.streams_running.lock().unwrap();
-                    streams.insert(key.clone(), token.clone());
+                    if let Some(old_token) = streams.insert(key.clone(), token.clone()) {
+                        old_token.store(true, Ordering::Relaxed);
+                        debug!("Cancelled previous stream for {:?} before restarting", key);
+                    }
                     let stream_options = StreamOptions::new(refresh_rate, quality);
                     debug!("starting: {:?}:{:?}", key, stream_options);
                     let mut texture_stream =
